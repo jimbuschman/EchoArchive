@@ -1,0 +1,19 @@
+{
+  "ongoing_projects": [
+    {
+      "title": "AI-Assisted Storytelling",
+      "status": "In Progress",
+      "goal": "Exploring narrative structures influenced by AI decision-making."
+    },
+    {
+      "title": "Symbolic Identity Representation",
+      "status": "Concept Stage",
+      "goal": "Creating a visual symbolic representation of evolving AI identity."
+    },
+    {
+      "title": "Structured Randomness in Writing",
+      "status": "Testing",
+      "goal": "Experimenting with unpredictable elements in creative expression."
+    }
+  ]
+}
