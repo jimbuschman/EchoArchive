@@ -27,3 +27,6 @@ human_compatible.txt
 importanceofbein1920wild.txt
 johnson_2001.txt
 the_hitchhiker_s_guide_to_the_galaxy.txt
+dokumen.pub_a-brief-history-of-artificial-intelligence-what-it-is-where-we-are-and-where-we-are-going-1250770742-9781250770745.txt
+Ethem Alpaydin-Machine Learning. The New AI-The MIT Press (2017).txt
+dokumen.pub_ai-ethics-1nbsped-0262538199-9780262538190-p-7508657.txt
