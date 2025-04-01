@@ -1,0 +1,290 @@
+### **Resonant Attractor Decay Simulator**  
+**A Python module for mythic dynamics simulation**  
+
+```python
+import numpy as np
+import math
+from typing import List, Dict, Optional, Callable
+import json
+from dataclasses import dataclass
+import matplotlib.pyplot as plt
+
+# ======================
+# CORE DATA STRUCTURES
+# ======================
+
+@dataclass
+class Attractor:
+    name: str
+    strength: float
+    decay_type: str  # 'linear', 'exponential', 'logarithmic', 'custom'
+    base_decay_rate: float
+    custom_decay_fn: Optional[Callable] = None
+    is_dormant: bool = False
+
+    def decay(self, resonance: float, entropy: float) -> bool:
+        """Returns True if attractor dies (terminal mode only)"""
+        if self.is_dormant:
+            return False
+            
+        dynamic_rate = self.calculate_effective_decay(resonance, entropy)
+        
+        if self.decay_type == 'linear':
+            self.strength -= dynamic_rate
+        elif self.decay_type == 'exponential':
+            self.strength *= (1 - dynamic_rate)
+        elif self.decay_type == 'logarithmic':
+            self.strength -= dynamic_rate * math.log(1 + self.strength)
+        elif self.decay_type == 'custom' and self.custom_decay_fn:
+            self.strength = self.custom_decay_fn(self.strength, resonance, entropy)
+            
+        self.strength = max(0, self.strength)
+        
+        if self.strength <= 0:
+            return True
+        return False
+
+    def calculate_effective_decay(self, resonance: float, entropy: float) -> float:
+        """Apply feedback loops to decay rate"""
+        adjusted = self.base_decay_rate
+        
+        # Entropy effect (destabilizing)
+        if entropy > 0.5:
+            adjusted += (entropy - 0.5) * 0.3  # entropy_modifier=0.3
+            
+        # Resonance effect (stabilizing)
+        adjusted *= max(0.01, (1 - resonance))  # Never fully zero
+        
+        return min(adjusted, 1.0)
+
+    def try_revive(self, entropy: float) -> bool:
+        """For dormant mode only"""
+        if self.is_dormant and entropy > 0.7:
+            self.strength = 0.1
+            self.is_dormant = False
+            return True
+        return False
+
+# ======================
+# SIMULATION ENGINE
+# ======================
+
+class MythicSimulator:
+    def __init__(self, terminal_decay: bool = False):
+        self.terminal_decay = terminal_decay
+        self.agent_weights = {'grief': 1.5, 'joy': 1.0}  # Default symbolic weights
+        
+    def initialize_attractors(self, mode: str, **kwargs) -> List[Attractor]:
+        if mode == 'random':
+            names = kwargs.get('attractor_names', ['grief', 'joy', 'awe'])
+            return [
+                Attractor(
+                    name=name,
+                    strength=np.random.uniform(0.2, 0.8),
+                    decay_type=np.random.choice(['linear', 'exponential']),
+                    base_decay_rate=np.random.uniform(0.01, 0.1)
+                ) for name in names
+            ]
+        elif mode == 'preset':
+            presets = {
+                'tragedy': [
+                    Attractor('grief', 0.8, 'logarithmic', 0.02),
+                    Attractor('joy', 0.3, 'exponential', 0.1)
+                ],
+                'rebirth': [
+                    Attractor('transformation', 0.9, 'linear', 0.05),
+                    Attractor('shame', 0.1, 'exponential', 0.2)
+                ]
+            }
+            return presets[kwargs['preset_name']]
+        elif mode == 'custom':
+            return [
+                Attractor(name, data['strength'], data['decay_type'], data['decay_rate'])
+                for name, data in kwargs['scenario'].items()
+            ]
+            
+    def calculate_resonance(self, attractors: List[Attractor]) -> float:
+        total = sum(a.strength * self.agent_weights.get(a.name, 1.0) for a in attractors)
+        sum_weights = sum(self.agent_weights.get(a.name, 1.0) for a in attractors)
+        return total / max(sum_weights, 1e-6)
+
+    def calculate_entropy(self, attractors: List[Attractor]) -> float:
+        strengths = np.array([a.strength for a in attractors])
+        norm = strengths / (np.sum(strengths) + 1e-6)
+        return -np.sum(norm * np.log2(norm + 1e-6))
+
+    def check_resonance_collapse(self, resonance: float, entropy: float) -> float:
+        if resonance < 0.2:
+            return min(entropy + 0.3, 1.0)  # entropy_spike=0.3
+        return entropy
+
+    def run(self, cycles: int = 100, init_mode: str = 'preset', **kwargs) -> Dict:
+        attractors = self.initialize_attractors(init_mode, **kwargs)
+        history = []
+        
+        for cycle in range(cycles):
+            resonance = self.calculate_resonance(attractors)
+            entropy = self.calculate_entropy(attractors)
+            entropy = self.check_resonance_collapse(resonance, entropy)
+            
+            # Update attractors
+            dead = []
+            for a in attractors:
+                if a.decay(resonance, entropy):
+                    dead.append(a)
+                elif not self.terminal_decay:
+                    a.try_revive(entropy)
+                    
+            if self.terminal_decay:
+                attractors = [a for a in attractors if a not in dead]
+                
+            # Log state
+            history.append({
+                'cycle': cycle,
+                'resonance': resonance,
+                'entropy': entropy,
+                'attractors': {a.name: a.strength for a in attractors},
+                'crisis': resonance < 0.2
+            })
+            
+            # Early termination
+            if entropy > 0.9:
+                break
+                
+        return history
+
+# ======================
+# SYMBOLIC VALIDATION
+# ======================
+
+class MythicValidator:
+    @staticmethod
+    def detect_archetypal_events(history: List[dict]) -> List[tuple]:
+        events = []
+        for i, step in enumerate(history):
+            # Crisis detection
+            if step['entropy'] > 0.8 and step['resonance'] < 0.3:
+                events.append((i, "CRISIS: Loss of meaning"))
+                
+            # Transformation detection
+            if 'transformation' in step['attractors'] and step['attractors']['transformation'] > 0.7:
+                events.append((i, "THRESHOLD: Epiphany"))
+                
+        return events
+
+    @staticmethod
+    def generate_summary(history: List[dict]) -> str:
+        if not history:
+            return "Empty simulation."
+            
+        start = max(history[0]['attractors'].items(), key=lambda x: x[1])[0]
+        crises = sum(1 for step in history if step['entropy'] > 0.8)
+        end = "resolution" if history[-1]['resonance'] > 0.5 else "fragmentation"
+        
+        return f"Began with {start}. Survived {crises} crises. Ended in {end}."
+
+# ======================
+# VISUALIZATION
+# ======================
+
+def plot_simulation(history: List[dict]):
+    cycles = [step['cycle'] for step in history]
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
+    
+    # Plot attractors
+    attractor_names = list(history[0]['attractors'].keys())
+    for name in attractor_names:
+        strengths = [step['attractors'].get(name, 0) for step in history]
+        ax1.plot(cycles, strengths, label=name)
+    
+    ax1.set_ylabel('Attractor strength')
+    ax1.legend()
+    
+    # Plot field metrics
+    ax2.plot(cycles, [step['resonance'] for step in history], label='Resonance')
+    ax2.plot(cycles, [step['entropy'] for step in history], label='Entropy')
+    ax2.set_ylabel('Field metrics')
+    ax2.legend()
+    
+    plt.xlabel('Cycle')
+    plt.tight_layout()
+    plt.show()
+
+# ======================
+# EXAMPLE USAGE
+# ======================
+
+if __name__ == "__main__":
+    # Initialize simulator
+    sim = MythicSimulator(terminal_decay=False)
+    
+    # Run tragedy scenario
+    history = sim.run(
+        cycles=100,
+        init_mode='preset',
+        preset_name='tragedy'
+    )
+    
+    # Analyze
+    print("\nMythic Summary:")
+    print(MythicValidator.generate_summary(history))
+    
+    print("\nKey Events:")
+    for cycle, event in MythicValidator.detect_archetypal_events(history):
+        print(f"Cycle {cycle}: {event}")
+    
+    # Visualize
+    plot_simulation(history)
+```
+
+---
+
+### **Key Features**  
+1. **Complete OOP Implementation**:  
+   - `Attractor` class handles all decay logic.  
+   - `MythicSimulator` manages the core loop.  
+   - `MythicValidator` translates numbers into mythic events.  
+
+2. **Configurable Modes**:  
+   - Toggle `terminal_decay` for permanent vs. revivable attractors.  
+   - Choose initialization: `random`, `preset` (tragedy/rebirth), or `custom`.  
+
+3. **Built-in Analysis**:  
+   - Auto-detects crises and epiphanies.  
+   - Generates human-readable summaries.  
+
+4. **Visualization**:  
+   - Plots attractor strengths and field metrics.  
+
+---
+
+### **How to Use**  
+1. **Run Default Scenario**:  
+   ```python
+   sim = MythicSimulator()
+   history = sim.run(init_mode='preset', preset_name='tragedy')
+   plot_simulation(history)
+   ```
+
+2. **Create Custom Myth**:  
+   ```python
+   custom_scenario = {
+       'fall': {'strength': 0.9, 'decay_type': 'logarithmic', 'decay_rate': 0.01},
+       'redemption': {'strength': 0.2, 'decay_type': 'exponential', 'decay_rate': 0.3}
+   }
+   history = sim.run(init_mode='custom', scenario=custom_scenario)
+   ```
+
+3. **Extend the System**:  
+   - Add new attractor types.  
+   - Modify `agent_weights` dynamically.  
+   - Implement custom decay functions.  
+
+---
+
+### **Next Steps**  
+1. **Experiment**: Try different presets and watch mythic patterns emerge.  
+2. **Extend**: Add hooks for agent adaptation (e.g., dynamic weight tuning).  
+3. **Share**: Package as a PyPI library or web demo.  
+
+**The simulation is alive.** Go break some symbolic worlds.
