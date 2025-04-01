@@ -1,0 +1,372 @@
+License: CC BY 4.0
+arXiv:2210.13382v5 [cs.LG] null
+Emergent world representations: Exploring a sequence model trained on a synthetic task
+Kenneth Li
+Harvard University &Aspen K. Hopkins Massachusetts Institute of Technology &David Bau Northeastern University \ANDFernanda Viégas
+Harvard University &Hanspeter Pfister Harvard University &Martin Wattenberg Harvard University
+Correspondence to ke_li@g.harvard.edu
+Abstract
+Language models show a surprising range of capabilities, but the source of their apparent competence is unclear. Do these networks just memorize a collection of surface statistics, or do they rely on internal representations of the process that generates the sequences they see? We investigate this question in a synthetic setting by applying a variant of the GPT model to the task of predicting legal moves in a simple board game, Othello. Although the network has no a priori knowledge of the game or its rules, we uncover evidence of an emergent nonlinear internal representation of the board state. Interventional experiments indicate this representation can be used to control the output of the network. By leveraging these intervention techniques, we produce “latent saliency maps” that help explain predictions. 1
+
+1Introduction
+Recent language models have shown an intriguing range of capabilities. Networks trained on a simple “next-word” prediction task are apparently capable of many other things, such as solving logic puzzles or writing basic code. 2 Yet how this type of performance emerges from sequence predictions remains a subject of current debate.
+
+Some have suggested that training on a sequence modeling task is inherently limiting. The arguments range from philosophical (Bender & Koller, 2020) to mathematical (Merrill et al., 2021). A common theme is that seemingly good performance might result from memorizing “surface statistics,” i.e., a long list of correlations that do not reflect a causal model of the process generating the sequence. This issue is of practical concern, since relying on spurious correlations may lead to problems on out-of-distribution data (Bender et al., 2021; Floridi & Chiriatti, 2020).
+
+On the other hand, some tantalizing clues suggest language models may do more than collect spurious correlations, instead building interpretable world models—that is, understandable models of the process producing the sequences they are trained on. Recent evidence suggests language models can develop internal representations for very simple concepts, such as color, direction Abdou et al. (2021); Patel & Pavlick (2022), or tracking boolean states during synthetic tasks (Li et al., 2021) (see Related Work (section 6) for more detail).
+
+A promising approach to studying the emergence of world models is used by Toshniwal et al. (2021), which explores language models trained on chess move sequences. The idea is to analyze the behavior of a standard language modeling architecture in a well-understood, constrained setting. The paper finds that these models learn to predict legal chess moves with high accuracy. Furthermore, by analyzing predicted moves, the paper shows that the model appears to track the board state. The authors stop short, however, of exploring the form of any internal representations. Such an investigation will be the focus of this paper. A key motivation is the hope that ideas and techniques learned in this simplified setting may eventually be useful in natural-language settings as well.
+
+1.1The game of Othello as testbed for interpretability
+Toshniwal et al. (2021)’s observations suggest a new approach to studying the representations learned by sequence models. If we think of a board as the “world,” then games provide us with an appealing experimental testbed to explore world representations of moderate complexity. As our setting, we choose the popular game of Othello (Figure 1), which is simpler than chess. This setting allows us to investigate world representations in a highly controlled context, where both the task and sequence being modeled are synthetic and well-understood.
+
+As a first step, we train a language model (a GPT variant we call Othello-GPT) to extend partial game transcripts (a list of moves made by players) with legal moves. The model has no a priori knowledge of the game or its rules. All it sees during training is a series of tokens derived from the game transcripts. Each token represents a tile where players place their discs. Note that we do not explicitly train the model to make strategically good moves or to win the game. Nonetheless, our model is able to generate legal Othello moves with high accuracy.
+
+Our next step is to look for world representations that might be used by the network. In Othello, the “world” consists of the current board position. A natural question is whether, within the model, we can identify a representation of the board state involved in producing its next move predictions. To study this question, we train a set of probes, i.e., classifiers which allow us to infer the board state from the internal network activations . This type of probing has become a standard tool for analyzing neural networks (Alain & Bengio, 2016; Tenney et al., 2019; Belinkov, 2016).
+
+Using this probing methodology, we find evidence for an emergent world representation. In particular, we show that a non-linear probe is able to predict the board state with high accuracy (section 3). (Linear probes, however, produce poor results.) This probe defines an internal representation of the board state. We then provide evidence that this representation plays a causal role in the network’s predictions. Our main tool is an intervention technique that modifies internal activations so that they correspond to counterfactual board states.
+
+We also discuss how knowledge of the internal world model can be used as an interpretability tool. Using our activation-intervention technique, we create latent saliency maps, which provide insight into how the network makes a given prediction. These maps are built by performing attribution at a high-level setting (the board) rather than a low-level one (individual input tokens or moves).
+
+To sum up, we present four contributions: (1) we provide evidence for an emergent world model in a GPT variant trained to produce legal moves in Othello; (2) we compare the performance of linear and non-linear probing approaches, and find that non-linear probes are superior in this context; (3) we present an intervention technique that suggests that, in certain situations, the emergent world model can be used to control the network’s behavior; and (4) we show how probes can be used to produce latent saliency maps to shed light on the model’s predictions.
+
+2“Language modeling” of Othello game transcripts
+Our approach for investigating internal representations of language models is to narrow our focus from natural language to a more controlled synthetic setting. We are partly inspired by the fact that language models show evidence of learning to make valid chess moves simply by observing game transcripts in training data (Toshniwal et al., 2021). We choose the game Othello, which is simpler than chess, but maintains a sufficiently large game tree to avoid memorization. Our strategy is to see what, if anything, a GPT variant learns simply by observing game transcripts, without any a priori knowledge of rules or board structure.
+
+Refer to caption
+Figure 1:A visual explanation of Othello rules, from left to right: (A) The board is always initialized with four discs (two black, two white) placed in the center of the board. (B) Black always moves first. Every move must flip one or more opponent discs by outflanking—or sandwiching—the opponent disc(s). (C) The opponent repeats this process. A game ends when there are no more legal moves.
+The game is played on an 8x8 board where two players alternate placing white or black discs on the board tiles. The object of the game is to have the majority of one’s color discs on the board at the end of the game. Othello makes a natural testbed for studying emergent world representations since the game tree is far too large to memorize, but the rules and state are significantly simpler than chess.
+
+The following subsections describe how we train a system with no prior knowledge of Othello to predict legal moves with high accuracy. The system itself is not our end goal; instead, it serves as our object of study.
+
+2.1Datasets: “Championship” and “Synthetic”
+We use two sets of training data for the system, which we call “championship” and “synthetic”. Each captures different objectives, namely data quality vs. quantity. While limited in size, championship data reflects strategic moves by expert human players. The synthetic data set is far larger, consisting of legal but otherwise random moves.
+
+Our championship dataset is produced by collecting Othello championship games from two online sources3, containing 
+7
+,
+605
+ and 
+132
+,
+921
+ games, respectively. They are combined and split randomly by 
+8
+:
+2
+ into training and validation sets. The games in this dataset were produced by matches where human players presumably made moves with a strategic intent to win. Following this, we generate a synthetic dataset with 
+20
+ million games for training and 
+3
+,
+796
+,
+010
+ games for validation. We compute this dataset by uniformly sampling leaves from the Othello game tree. Its data distribution is different from the championship games, reflecting no strategy.
+
+2.2Model and Training
+Our goal is to study how much Othello-GPT can learn from pure sequence information, so we provide as few inductive biases as possible. (Note the contrast with a system like AlphaZero (Silver et al., 2018), where the goal was to win highly competitive chess games.) We therefore use only sequential tile indices as input to our model. For example, A4 and H6 are indexed as the 
+4
+th and the 
+58
+th word in our vocabulary, respectively. Each game is treated as a sentence tokenized with a vocabulary of 60 words, where each word corresponds to one of the 
+60
+ tiles on which players put discs, excluding the 
+4
+ tiles in the center (Figure 1).
+
+We trained an 8-layer GPT model (Radford et al., 2018; 2019; Brown et al., 2020) with an 8-head attention mechanism and a 512-dimensional hidden space. The training was performed in an autoregressive fashion. For each partial game 
+{
+y
+t
+}
+t
+=
+0
+T
+−
+1
+, the computation process starts from indexing a trainable word embedding consisting of the 60 vectors, each for one word, to get 
+{
+x
+t
+0
+}
+t
+=
+0
+T
+−
+1
+. They are then sequentially processed by 
+8
+ multi-head attention layers. We denote the intermediate feature for the 
+t
+-th token after the 
+l
+-th layer as 
+x
+t
+l
+. By employing a causal mask, only the features at the immediately preceding layer and earlier time steps 
+x
+⩽
+t
+l
+−
+1
+ are visible to 
+x
+t
+l
+. Finally, 
+x
+T
+−
+1
+8
+ goes through a linear classifier to predict logits for 
+y
+^
+T
+. We minimize the cross-entropy loss between ground-truth move and predicted logits by gradient descent.
+
+The model starts from randomly initialized weights, including in the word embedding layer. Though there are geometrical relationships between the 60 words (e.g., C4 is below B4), this inductive bias is not explicitly given to the model but rather left to be learned.
+
+2.3Othello-GPT Usually Predicts Legal Moves
+We now evaluate how well the model’s predictions adhere to the rules of Othello. For each game in the validation set, which was not seen during training, and for each step in the game, we ask Othello-GPT to predict the next legal move conditioned by the partial game before that move. We then calculate the error rate by checking if the top-
+1
+ prediction is legal. The error rate is 
+0.01
+%
+ for Othello-GPT trained on the synthetic dataset and 
+5.17
+%
+ for Othello-GPT trained on the championship dataset. For comparison, the untrained Othello-GPT has an error rate of 
+93.29
+%
+. The main takeaway is that Othello-GPT does far better than chance in predicting legal moves when trained on both datasets.
+
+A potential explanation for these results may be that Othello-GPT is simply memorizing all possible transcripts. To test for this possibility, we created a skewed dataset of 20 million games to replace the training set of the synthetic dataset. At the beginning of every game, there are four possible opening moves: C5, D6, E3 and F4. This means the lowest layer of the game tree (first move) has four nodes (the four possible opening moves). For our skewed dataset, we truncate one of these nodes (C5), which is equivalent to removing a quarter of the whole game tree. Othello-GPT trained on the skewed dataset still yields an error rate of 
+0.02
+%
+. Since Othello-GPT has seen none of these test sequences before, pure sequence memorization cannot explain its performance 4.
+
+If the performance of Othello-GPT is not due to memorization, what is it doing? We now turn to this question by probing for internal representations of the game state.
+
+3Exploring Internal Representations with Probes
+We seek to understand if Othello-GPT computes internal representations of the game state. One standard tool for this task is a “probe” (Alain & Bengio, 2016; Belinkov, 2016; Tenney et al., 2019). A probe is a classifier or regressor whose input consists of internal activations of a network, and which is trained to predict a feature of interest, e.g., part of speech or parse tree depth (Hewitt & Manning, 2019). If we are able to train an accurate probe, it suggests that a representation of the feature is encoded in the network’s activations.
+
+In our case, we want to know whether Othello-GPT’s internal activations contain a representation of the current board state. To study this question, we train probes that predict the board state from the network’s internal activations after a given sequence of moves. Note that the board state—whether each tile is empty or holds a black or white disc—is generally a nonlinear function of the input tokens. On the other hand, it is straightforward to write a program to compute this function, it makes a natural probe target.5
+
+We take the autoregressive features 
+x
+t
+l
+ that summarize the partial sequence 
+y
+⩽
+t
+ as the input to the probe and study results from different layers 
+l
+. The output 
+p
+θ
+⁢
+(
+x
+t
+l
+)
+ is a 3-way categorical probability distribution. We randomly split pairs of internal representation and ground-truth tile state by 
+8
+:
+2
+ into training and validation set. Error rates on validation set are reported. A best random guess yields 
+52.95
+%
+, if the probe always guesses the tile is empty.
+
+3.1Linear Probes Have High Error Rates
+Our first result is that linear classifier probes have poor relative accuracy. Its function can be written as 
+p
+θ
+⁢
+(
+x
+t
+l
+)
+=
+softmax
+⁢
+(
+W
+⁢
+x
+t
+l
+)
+ where 
+θ
+=
+{
+W
+∈
+ℝ
+F
+×
+3
+}
+. 
+F
+ is the number of dimensions of input 
+x
+t
+l
+. As Table 1 shows, error rates never dip below 
+20
+%
+. As a baseline, we have included probes trained on a randomly initialized network6 We can see that there is only a marginal improvement in accuracy when we move to probing a fully-trained network. This result suggests that if there is an internal representation of the board state, it does not have a simple linear form.
+
+x
+1
+x
+2
+x
+3
+x
+4
+x
+5
+x
+6
+x
+7
+x
+8
+Randomized	26.7	27.1	27.6	28.0	28.3	28.5	28.7	28.9
+Championship	24.2	23.8	23.7	23.6	23.6	23.7	23.8	24.3
+Synthetic	21.9	20.5	20.4	20.6	21.1	21.6	22.2	23.1
+Table 1:Error rates (
+%
+) of linear probes on randomized Othello-GPT and Othello-GPTs trained on different datasets across different layers (
+x
+i
+ represents internal representations after the 
+i
+-th layer).
+3.2Nonlinear Probes Have Lower Error Rates
+Given the poor performance of linear probes, it is natural to ask whether a nonlinear probe would have higher accuracy. Moving up one notch of complexity, we apply a 2-layer MLP as a probe. This technique has been used successfully in other language model probing work, e.g.,  Conneau et al. (2018); Cao et al. (2021); Hernandez & Andreas (2021). Its function can be written as 
+p
+θ
+⁢
+(
+x
+t
+l
+)
+=
+softmax
+⁢
+(
+W
+1
+⁢
+ReLU
+⁢
+(
+W
+2
+⁢
+x
+t
+l
+)
+)
+ where 
+θ
+=
+{
+W
+1
+∈
+ℝ
+H
+×
+3
+,
+W
+2
+∈
+ℝ
+F
+×
+H
+}
+. 
+H
+ is the number of hidden dimensions for the nonlinear probes.
+
+The probe accuracy for trained networks, shown in Table 2, is significantly better than the linear probe in absolute terms. By contrast, the baseline (probing a randomized network with nonlinear probes) shows almost no improvement over the linear case. These results indicate that the probe may be recovering a nontrivial representation of board state in the network’s activations. In section 4, we describe intervention experiments validating this hypothesis.
+
+x
+1
+x
+2
+x
+3
+x
+4
+x
+5
+x
+6
+x
+7
+x
+8
+Randomized	25.5	25.4	25.5	25.8	26.0	26.2	26.2	26.4
+Championship	12.8	10.3	9.5	9.4	9.8	10.5	11.4	12.4
+Synthetic	11.3	7.5	4.8	3.4	2.4	1.8	1.7	4.6
+Table 2:Error rates (
+%
+) of nonlinear probes on randomized Othello-GPT and Othello-GPTs trained on different datasets across different layers. Standard deviations are reported in Appendix H.
+4Validating Probes with Interventional Experiments
+Our nonlinear probe accuracies suggest that Othello-GPT computes information reflecting the board state. It’s not obvious, however, whether that information is causal for the model’s predictions. In the following section, we adhere to  Belinkov (2016)’s recommendation, performing a set of interventional experiments to determine the causal relationship between model predictions and the emergent world representations.
+
+To determine whether the board state information affects the network’s predictions, we influence internal activations during Othello-GPT’s calculation and measure the resulting effects. At a high level, the interventions are as follows: given a set of activations from the Othello-GPT, a probe predicts a baseline board state 
+B
+. We record the move predictions associated with 
+B
+, then modify these activations such that our probe reports an updated board state 
+B
+′
+. Through our protocol, only a single tile 
+s
+ distinguishes 
+B
+′
+ from 
+B
+’s board state (an example of which can be seen in Figure 2). This small modification results in a different set of possible legal moves for 
+B
+′
+. If the new predictions match our expectations for 
+B
+′
+—and not the predictions we recorded for 
+B
+—we conclude the representation had a causal effect on the model.
+
+Refer to caption
+Figure 2:(A) explains how we intervene on a board tile. Here, we only want to flip one tile, e.g. E6, from white to black. In (B), four views present an Othello game in progression, which can be reliably probed from an internal representation 
+x
+. The lower left board represents the model’s perceived world state prior to intervention. The upper left board shows the model’s predictions for legal moves given this state. Post-intervention, the model’s world state is updated—E6’s state has been switched from white to black (lower right), leading to a different set of legal move predictions (upper right). Note that two tiles (E6) are highlighted in the world state boards. This is the tile that we “intervene” on, changing from white to black. (C) Shows our proposed intervention scheme. Light blue indicates unmodified activations; dark blue represents activations affected by intervention. Starting from a predefined layer, we intervene at the temporally-last token (shown in (A)). We replace original internal representations with the post-intervention ones and resume computation for the next one layer. Part of the misinformation gets corrected (light blue), but we alternate this intervening and computation process until the last layer, from which the next-step prediction is made.
+4.1Intervention Technique
+To implement an intervention that changes the predicted state from a board position 
+B
+ to a modified version 
+B
+′
+ we must decide (a) which layers to modify activations in, and (b) how to modify those acti
